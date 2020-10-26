@@ -16,7 +16,7 @@ library(rmdformats)
 
 ### Exploratory work:
 
-```{r echo = F, fig.retina=4}
+```{r echo = F}
 knitr::include_graphics("/Users/atoumi/Desktop/Graphics/figs/explore.png")
 ```
 
@@ -63,7 +63,6 @@ knitr::include_graphics("/Users/atoumi/Desktop/Graphics/figs/grammar_R.png")
   - Clean and wrangle data 
   - Map data to visual elements
   - Tweak scales, guides, axis, labels and theme 
-- Map data to visual elements
 - Ease of iteration 
 - Ease in maintaining consistency
 
@@ -145,17 +144,17 @@ ggplotly(nfl_qbr_plot)
   - `x`, `y` 
   - `color`, `stroke`, `span`, `symbol`, `linetype`
 
-There is a family of `add_*` functions:
-- `add_lines()`
-- `add_bars`
-- `add_histogram2d()`
-- `add_contour`
-- `add_boxplot`
-- ...and many more!
+* There is a family of `add_*` functions:
+  * `add_lines()`
+  * `add_bars`
+  * `add_histogram2d()`
+  * `add_contour`
+  * `add_boxplot`
+  * ...and many more!
 
 The **plotly** package takes a pure functional approach to a layered grammar of graphics, meaning (almost) every function anticipates a plotly object as input to it’s first argument and returns a modified version of that plotly object.
 
-Example: the layout() function anticipates a plotly object in it’s first argument and it’s other arguments add and/or modify various layout components of that object (e.g., the title):
+Example: the layout() function anticipates a plotly object in it’s first argument and its other arguments add and/or modify various layout components of that object (e.g., the title):
 
 ```{r warning = F, message = F}
 layout(
@@ -176,7 +175,7 @@ nfl_qbr %>%
 ```
 
 
-Add a layer of text using the summarized counts. Note that the global x mapping, as well as the other mappings local to this text layer (text and y), reflect data values from step 3
+You can also add a layer of text using the summarized counts. Note that the global x mapping, as well as the other mappings local to this text layer (text and y), reflect data values from step 3:
 
 
 ```{r warning = F, message = F}
@@ -200,16 +199,123 @@ To recap:
 2. Add a bars layer (which inherits the y from `plot_ly`)
 3. Use **dplyr** verbs to modify the data underlying the **plotly** object 
 4. Add additional layers (like a layer of text)
-
 5. Share 
+
+## D3 and Leaflet 
+
+**D3** and **Leaflet** are also two popular JavaScript libraries whose R interfaces is based on the grammar of graphics. Like **plotly**, **D3** and **Leaflet** can be used in a data pipeline with other R tools to clean, wrangle, transform and model with consistency and ease of iteration. 
+
+### D3
+
+The amazing dreamRs team is behind the {r2d3maps} package which allows you to make D3 maps in a flash. Check out their documentation to get a taste of what you can make: https://github.com/dreamRs/r2d3maps. 
+
+```{r warning = F, message = F}
+
+# Packages ----------------------------------------------------------------
+library(janitor)
+library(albersusa)
+library(sf)
+library(tigris)
+library(r2d3maps)
+library(rmapshaper)
+
+# County geometries -------------------------------------------------------
+
+cty_sf <- counties_sf("longlat") # from albersusa package 
+plot(st_geometry(cty_sf)) # checking geometries, looks good
+cty_sf <- ms_simplify(cty_sf) # make the geometries simpler for faster rendering 
+
+
+# Data ---------------------------------------------------------------------
+
+# CDC's social vulnerability index variables: https://svi.cdc.gov/Documents/Data/2018_SVI_Data/SVI2018Documentation.pdf
+
+svi <- read_csv("/Users/atoumi/Desktop/interactive_graphics/svi_county.csv") %>% 
+  clean_names() %>% # make everything snake_case
+  filter(across(where(is.numeric), ~. >= 0)) # because NA's are coded as -Inf
+
+# join data to geometries
+cty_sf_joined <- cty_sf %>% geo_join(svi, by_sp = "fips", by_df = "fips")
+
+# make d3 map
+d3_map(shape = cty_sf_joined, projection = "Albers") %>%
+  add_labs(caption = "Viz: Asmae Toumi | Data: CDC") %>% 
+  add_continuous_breaks(var = "rpl_theme1", palette = "Reds") %>%
+  add_legend(title = "Socioeconomic Vulnerability (percentile)") %>%
+  add_tooltip("<b>{location}</b>: {rpl_theme1}")
+```
+
+
+
+### Leaflet 
+
+Like **plotly**, **leaflet** has an R interface. Unlike **D3**, **Leaflet** is more suited for maps. Leaflet is well-suited for the web, highly customizable and integrates well with R's ecosystem. 
+
+```{r warning = F, message = F}
+library(tigris)
+
+cty <- counties(cb = TRUE, resolution = "20m") %>% rename(fips = GEOID)
+
+library(tidycensus)
+
+us_county_income <- 
+  get_acs(geography = "county", variables = "B19013_001") %>% 
+  select(fips = GEOID, name = NAME, income = "estimate") %>% 
+  drop_na()
+
+cty <- cty %>% 
+  geo_join(us_county_income, by_df = "fips", by_sp = "fips")
+
+library(leaflet)
+library(RColorBrewer)
+library(htmltools)
+
+pal <- colorNumeric("YlOrRd", domain = cty$income)
+
+labels <- 
+  sprintf(
+    "<strong>%s</strong><br/> Income: %s $",
+    cty$name, cty$income) %>% 
+  lapply(htmltools::HTML)
+
+leaflet(cty) %>%
+  setView(-96, 37.8, 4) %>%
+  addProviderTiles("CartoDB.PositronNoLabels") %>%
+  addPolygons(
+    fillColor = ~pal(income), 
+    weight = 1,
+    opacity = 1,
+    color = "white",
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+      weight = 2,
+      color = "#666",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal"),
+      textsize = "15px",
+      direction = "auto")) %>%
+  addLegend(pal = pal,
+            values = cty$income,
+            position = "bottomright",
+            title = "Income (5-year ACS)",
+            labFormat = labelFormat(suffix = "$"),
+            opacity = 0.8,
+            na.label = "No data")
+```
+
+
+See `leaflet.R` for standalone code.
 
 ## Sharing 
 
 ### Saving plotly/ggplotly objects
 
-Plotly/ggplotly objects are also **htmlwidgets** so any methods used for saving **htmlwidgets** also works for plotly/ggplotly objects: 
-  - Saving and embedding HTML: `htmlwidgets::saveWidget()` function (also works for leaflet, DT, etc.)
-  - Exporting static images: `orca()` as .svg or .pdf 
+* Plotly/ggplotly objects are also **htmlwidgets** so any methods used for saving **htmlwidgets** also works for plotly/ggplotly objects: 
+  * Saving and embedding HTML: `htmlwidgets::saveWidget()` function (also works for leaflet, DT, etc.)
+  * Exporting static images: `orca()` as .svg or .pdf 
 
 ### Combining multiple views
 
@@ -246,11 +352,13 @@ Common ways to arrange components in a single web-page:
 
 3. CSS flexbox: If you know some HTML and CSS, you can leverage CSS flexbox to arrange components via the **htmltools** package.
 
-```{r}
+```{r echo = F}
 knitr::include_graphics("/Users/atoumi/Desktop/Graphics/figs/sharing.png")
 ```
 
-*We'll see how crosstalk, flexdashboard and DT work together! For shiny, check out this talk by Carson Sievert: https://talks.cpsievert.me/20191115/#1*
+We'll see how crosstalk, flexdashboard and DT work together with `Demo.Rmd` script. We'll also see a Shiny app with the `app.R` script. 
+
+For more on shiny, check out this talk by Carson Sievert: https://talks.cpsievert.me/20191115/#1
 
 ## Lessons learned 
 

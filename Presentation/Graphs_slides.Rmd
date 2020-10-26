@@ -1,0 +1,284 @@
+---
+title: "Creating Interactive Graphs for the Web"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+
+```{r echo = F}
+library(knitr)
+library(rmdformats)
+```
+
+
+## Usefulness in a data science workflow
+
+### Exploratory work:
+
+```{r echo = F, fig.retina=4}
+knitr::include_graphics("/Users/atoumi/Desktop/Graphics/figs/explore.png")
+```
+
+### Expository work:
+
+```{r echo = F}
+knitr::include_graphics("/Users/atoumi/Desktop/Graphics/figs/expository.png")
+```
+
+Share-able, portable, composable (i.e., reports, dashboards, etc)
+
+# Grammar of graphics 
+
+- Leland Wilkinson (1980): A grammar of graphics is a **framework** which follows a **layered approach** to describe and construct visualizations or graphics in a **structured manner**. 
+
+
+```{r echo = F}
+knitr::include_graphics("/Users/atoumi/Desktop/Graphics/figs/leland.jpg")
+```
+
+
+```{r echo = F}
+knitr::include_graphics("/Users/atoumi/Desktop/Graphics/figs/grammar_graphics.png")
+```
+
+Many libraries abide by this grammar: `ggplot2`, `plotly`, `D3` and many others. 
+
+### Grammar of graphics and ggplot2
+
+The **gg** in **ggplot2** stands for **G**rammar of **G**raphics.
+
+> "The transferrable skills from ggplot2 are not the idiosyncracies of plotting syntax, but a powerful way of thinking about visualisation, as a way of mapping between variables and the visual properties of geometric objects that you can perceive."
+>
+> `r tufte::quote_footer('--- Hadley Wickham')`
+
+
+```{r echo = F}
+knitr::include_graphics("/Users/atoumi/Desktop/Graphics/figs/grammar_R.png")
+```
+
+### Advantages
+
+- Functional data visualization
+  - Clean and wrangle data 
+  - Map data to visual elements
+  - Tweak scales, guides, axis, labels and theme 
+- Map data to visual elements
+- Ease of iteration 
+- Ease in maintaining consistency
+
+
+## Prepare your system
+
+1. Update R and RStudio to the latest, released version:  https://www.rstudio.com/products/rstudio/download/
+
+2. Download and load the following packages:
+
+```{r eval = F}
+install.packages(c("devtools", "knitr", 
+                   "usethis", "tidyverse", 
+                   "plotly", "r2d3", 
+                   "crosstalk", "shiny", 
+                   "flexdashboard"))
+```
+
+Data source: espnscraperR, which collects or scrapes QBR, NFL standings, and stats from ESPN
+
+```{r eval = F}
+remotes::install_github("jthomasmock/espnscrapeR")
+```
+
+```{r warning = F, message = F}
+library(tidyverse)
+library(espnscrapeR)
+
+nfl_qbr <- 
+  crossing(season = 2020, week = 1:6) %>% 
+  pmap_dfr(espnscrapeR::get_nfl_qbr)
+```
+
+Consider working in the preview version of RStudio as well for latest features (that are more stable than the daily build): https://www.rstudio.com/products/rstudio/download/preview/
+
+## Plotly 
+
+- **Plotly** R package allows you to create a variety of interactive graphics 
+
+- Two ways:
+  - transforming a *ggplot2* object into a *plotly* object via `ggplotly()`
+  - directly initializing a *plotly* object with `plot_ly()`, `plot_geo()` or `plot_mapbox()`
+  
+- There are strengths, weaknesses to either approach
+
+- Learning both will pay dividends, as they share a common grammar and can be reused 
+
+### Intro to **ggplotly()**
+
+```{r warning = F, message = F}
+library(plotly)
+
+nfl_qbr_plot <- nfl_qbr %>% 
+  ggplot(aes(x = total_epa, y = qbr_total, label = short_name)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_label() +
+  theme_minimal() +
+  labs(
+    x = "EPA", y = "QBR", 
+    title = "EPA is correlated with QBR"
+    )
+
+nfl_qbr_plot
+```
+
+```{r warning = F, message = F}
+ggplotly(nfl_qbr_plot)
+```
+
+
+### Intro to **plot_ly()**
+
+- Any plot made with  `plot_ly()` uses the JavaScript library **plotly.js**
+
+- `plot_ly()` interfaced directly with plotly.js
+
+- `plot_ly` has arguments that fit into the "Grammar of Graphics":
+  - `x`, `y` 
+  - `color`, `stroke`, `span`, `symbol`, `linetype`
+
+There is a family of `add_*` functions:
+- `add_lines()`
+- `add_bars`
+- `add_histogram2d()`
+- `add_contour`
+- `add_boxplot`
+- ...and many more!
+
+The **plotly** package takes a pure functional approach to a layered grammar of graphics, meaning (almost) every function anticipates a plotly object as input to it’s first argument and returns a modified version of that plotly object.
+
+Example: the layout() function anticipates a plotly object in it’s first argument and it’s other arguments add and/or modify various layout components of that object (e.g., the title):
+
+```{r warning = F, message = F}
+layout(
+  plot_ly(nfl_qbr %>% filter(game_week == 3), x = ~short_name, y = ~total_epa, color = ~rank),
+  title = "QB Total EPA for Week 3"
+)
+```
+
+Notice that data manipulation verbs from the dplyr package (such as `filter()`) can be used to transform the data underlying a plotly object!
+
+Or, in a more cleaner fashion:
+
+```{r warning = F, message = F}
+nfl_qbr %>% 
+  filter(game_week == 3) %>% 
+  plot_ly(x = ~short_name, y = ~total_epa, color = ~rank) %>% 
+  add_bars() 
+```
+
+
+Add a layer of text using the summarized counts. Note that the global x mapping, as well as the other mappings local to this text layer (text and y), reflect data values from step 3
+
+
+```{r warning = F, message = F}
+nfl_qbr %>% 
+  filter(game_week == 3) %>% 
+  plot_ly(x = ~short_name, y = ~total_epa, color = ~rank) %>% 
+  add_bars() %>% 
+  add_text(
+    text = ~team,
+    textposition = "top middle",
+    cliponaxis = F
+  )
+```
+
+
+
+
+To recap:
+
+1. Globally assign `short_name`,`total_epa`, `rank` to `x`, `y` and `color`, respectively 
+2. Add a bars layer (which inherits the y from `plot_ly`)
+3. Use **dplyr** verbs to modify the data underlying the **plotly** object 
+4. Add additional layers (like a layer of text)
+
+5. Share 
+
+## Sharing 
+
+### Saving plotly/ggplotly objects
+
+Plotly/ggplotly objects are also **htmlwidgets** so any methods used for saving **htmlwidgets** also works for plotly/ggplotly objects: 
+  - Saving and embedding HTML: `htmlwidgets::saveWidget()` function (also works for leaflet, DT, etc.)
+  - Exporting static images: `orca()` as .svg or .pdf 
+
+### Combining multiple views
+
+#### Arranging multiple graphs 
+```{r warning = F, message = F}
+p1 <- plot_ly(nfl_qbr, x = ~total_epa, y = ~qbr_total) %>% 
+  add_lines(name = "qbr total")
+
+p2 <- plot_ly(nfl_qbr, x = ~total_epa, y = ~qb_plays) %>% 
+  add_lines(name = "qb plays")
+
+subplot(p1, p2, shareX = T)
+```
+
+#### Animation to combine multiple plots 
+```{r warning = F, message = F}
+gg <- nfl_qbr %>%
+  filter(team %in% c("ARI", "ATL", "CHI", "CAR", "DAL")) %>% 
+  ggplot(aes(x = total_epa, y = qbr_total, color = team)) +
+  geom_point(aes(frame = game_week)) 
+
+ggplotly(gg)
+```
+
+### Arranging multiple views 
+
+Since plotly objects are also **htmlwidgets**, any method that works for arranging htmlwidgets also works for plotly objects. 
+
+Common ways to arrange components in a single web-page:
+
+1. flexdashboard: An R package for arranging components into an opinionated dashboard layout. This package is essentially a special rmarkdown template that uses a simple markup syntax to define the layout.
+
+2. Bootstrap’s grid layout: Both the **crosstalk** and **shiny** packages provide ways to arrange numerous components via Bootstrap’s (a popular HTML/CSS framework) grid layout system.
+
+3. CSS flexbox: If you know some HTML and CSS, you can leverage CSS flexbox to arrange components via the **htmltools** package.
+
+```{r}
+knitr::include_graphics("/Users/atoumi/Desktop/Graphics/figs/sharing.png")
+```
+
+*We'll see how crosstalk, flexdashboard and DT work together! For shiny, check out this talk by Carson Sievert: https://talks.cpsievert.me/20191115/#1*
+
+## Lessons learned 
+
+- The amount of interactive techniques is overwhelming
+- Focus should be on identifying an analysis task/question first
+- There will be different ways of doing the same thing, pick the most sensible to you 
+
+Ideally, according to Carson Sievert: 
+
+Go for R packages/technologies for creating interactive web graphics which:
+
+- Don't require knowledge of web technologies (start-up cost)
+- Produce standalone HTML whenever possible (hosting/maintenance cost)
+- Work well with other "tidy" tools in R (iteration cost)
+- Link to external vis libraries (startover cost)
+- Easy to use interactive techniques that support data analysis tasks (discovery cost)
+
+
+## References
+
+- *Interactive web-based data visualization with R, plotly, and shiny* by Carson Sievert: https://plotly-r.com/index.html 
+
+- *A Gentle Guide to the Grammar of Graphics
+with ggplot2* by Garrick Aden-Buie*: https://pkg.garrickadenbuie.com/trug-ggplot2/#1 
+
+- *espnscrapeR* package by Thomas Mock: https://jthomasmock.github.io/espnscrapeR/index.html 
+
+- *My Talk on Grammar of Graphics: The Secret Sauce of Powerful Data Stories* by Ganes Kesari: https://medium.com/@kesari/my-talk-on-grammar-of-graphics-the-secret-sauce-of-powerful-data-stories-3da618cf1bbf
+
+
+

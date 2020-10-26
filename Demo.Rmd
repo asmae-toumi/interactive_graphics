@@ -1,0 +1,61 @@
+---
+title: "Demo"
+author: Asmae Toumi
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+
+```{r}
+suppressPackageStartupMessages({
+library(tidyverse)
+library(flexdashboard)
+library(plotly)
+library(DT)
+library(crosstalk)
+library(espnscrapeR)
+})
+```
+
+```{r echo=T, include=F}
+nfl_qbr <- 
+  crossing(season = 2020, week = 1:6) %>% 
+  pmap_dfr(espnscrapeR::get_nfl_qbr)
+```
+
+```{r}
+shared_nfl <- SharedData$new(nfl_qbr)
+```
+
+# Flexdashboard + crosstalk + DT
+
+## Column 1
+
+### Relationship between EPA and QB ranking
+
+```{r chart1}
+p <- shared_nfl %>% 
+  ggplot(aes(x = total_epa, y = qbr_total, color = rank)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(
+    x = "EPA", y = "QBR", 
+    title = "EPA is correlated with QBR"
+    )
+
+
+ggplotly(p) %>% highlight("plotly_selected") 
+  
+```
+
+## Column 2 {.tabset .tabset-fade}
+
+### ESPN QB data
+
+```{r table1}
+DT::datatable(shared_nfl)
+```
+
